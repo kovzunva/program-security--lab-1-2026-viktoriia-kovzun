@@ -8,7 +8,7 @@
 
 - **Фреймворк:** React Native (Expo SDK)
 - **Мова:** JavaScript
-- **База даних:** Expo SQLite (локальне збереження даних)
+- **База даних:** Expo SQLite (локальне збереження даних, offline-first)
 - **Файлові сервіси:** Expo FileSystem, Expo Sharing, JSZip
 - **Навігація:** React Navigation (Native Stack)
 - **Редактор тексту:** react-native-pell-rich-editor
@@ -22,8 +22,9 @@
 - **[docs/requirements-spec-29148.md](docs/requirements-spec-29148.md)** — Специфікація вимог до програмного забезпечення за стандартом ISO/IEC/IEEE 29148:2018.
 - **[docs/architecture-spec-42010.md](docs/architecture-spec-42010.md)** — Архітектурний опис системи за стандартом ISO/IEC/IEEE 42010:2022.
 - **[docs/business_logic.md](docs/business_logic.md)** — Опис бізнес-логіки, сутностей та сценаріїв використання.
-- **[docs/project-policy.md](docs/project-policy.md)** — Політика проєкту та правила безпечної розробки.
-- **[docs/threat-model.md](docs/threat-model.md)** — Модель загроз безпеки за методологією STRIDE.
+- **[docs/project-policy.md](docs/project-policy.md)** — Політика безпеки проєкту та правила безпечної розробки (відповідно до шаблону політики безпеки).
+- **[docs/privacy-policy.md](docs/privacy-policy.md)** — Політика конфіденційності (Privacy Policy).
+- **[docs/threat-model.md](docs/threat-model.md)** — Модель загроз безпеки за методологією STRIDE (згідно з методологією та DFD-таблицями).
 
 ```
 .
@@ -33,6 +34,7 @@
 ├── docs/                   # Документація
 │   ├── architecture-spec-42010.md
 │   ├── business_logic.md
+│   ├── privacy-policy.md
 │   ├── project-policy.md
 │   ├── requirements-spec-29148.md
 │   └── threat-model.md
@@ -59,7 +61,7 @@
 
 1. Клонувати репозиторій та перейти в папку проєкту:
    ```bash
-   git clone <url-репозиторію>
+   git clone git@github.com:kovzunva/program-security--lab-1-2026-viktoriia-kovzun.git
    cd lr
    ```
 
