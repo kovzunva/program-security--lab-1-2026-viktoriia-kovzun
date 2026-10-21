@@ -14,6 +14,7 @@ import { ScreenContainer } from '../components/ScreenContainer';
 import { Toast } from '../components/Toast';
 import { t, useLocalization } from '../localization';
 import { authService } from '../services/authService';
+import { cryptoService } from '../services/cryptoService';
 import { useAppTheme } from '../theme';
 
 function LanguageRadio({ label, selected, onPress, colors }) {
@@ -37,6 +38,7 @@ export function SettingsScreen() {
   const [isPinEnabled, setIsPinEnabled] = useState(false);
   const [isBiometricsEnabled, setIsBiometricsEnabled] = useState(false);
   const [hasBiometricsHardware, setHasBiometricsHardware] = useState(false);
+  const [isEncryptionActive, setIsEncryptionActive] = useState(true);
 
   // Modal States
   const [modalMode, setModalMode] = useState(null); // 'create' | 'disable' | 'change'
@@ -49,10 +51,12 @@ export function SettingsScreen() {
     const pinActive = await authService.isPinEnabled();
     const bioActive = await authService.isBiometricsEnabled();
     const bioHardware = await authService.hasBiometricsHardware();
+    const encActive = await cryptoService.isEncryptionEnabled();
 
     setIsPinEnabled(pinActive);
     setIsBiometricsEnabled(bioActive);
     setHasBiometricsHardware(bioHardware);
+    setIsEncryptionActive(encActive);
   }, []);
 
   useEffect(() => {
@@ -97,6 +101,16 @@ export function SettingsScreen() {
     await authService.setBiometricsEnabled(value);
     setIsBiometricsEnabled(value);
     Toast.show(value ? 'Біометричний вхід увімкнено' : 'Біометричний вхід вимкнено', '🔒');
+  };
+
+  // Toggle Encryption switch
+  const handleEncryptionToggle = async (value) => {
+    await cryptoService.setEncryptionEnabled(value);
+    setIsEncryptionActive(value);
+    Toast.show(
+      value ? 'AEAD-шифрування рукописів увімкнено' : 'Шифрування рукописів вимкнено',
+      '🔐',
+    );
   };
 
   // Open Change PIN modal
@@ -233,6 +247,24 @@ export function SettingsScreen() {
               />
             </View>
           )}
+
+          {/* Encryption Switch (AEAD AES-256-GCM) */}
+          <View style={[styles.switchRow, isNarrow && styles.switchRowNarrow, { marginTop: 14 }]}>
+            <View style={styles.labelContainer}>
+              <Text style={[styles.settingTitle, { color: colors.textPrimary }]}>
+                Шифрування рукописів (AES-256-GCM)
+              </Text>
+              <Text style={[styles.settingDesc, { color: colors.textSecondary }]}>
+                Автентифіковане шифрування розділів із контролем цілісності (AEAD)
+              </Text>
+            </View>
+            <Switch
+              value={isEncryptionActive}
+              onValueChange={handleEncryptionToggle}
+              thumbColor={isEncryptionActive ? colors.accent : '#F4F3F4'}
+              trackColor={{ false: '#CFCFCF', true: colors.accentMuted }}
+            />
+          </View>
         </View>
 
         {/* Theme Settings */}

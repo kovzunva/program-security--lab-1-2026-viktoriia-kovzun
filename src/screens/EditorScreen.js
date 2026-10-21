@@ -5,6 +5,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { RichEditor } from 'react-native-pell-rich-editor';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { StatBadge } from '../components/StatBadge';
+import { Toast } from '../components/Toast';
 import { t } from '../localization';
 import { useAppTheme } from '../theme';
 import { useEditorOrientation } from '../hooks/useScreenOrientation';
@@ -129,13 +130,16 @@ export function EditorScreen({ route }) {
   useEffect(() => {
     let isActive = true;
 
-    loadChapter().catch(() => {
+    loadChapter().catch((err) => {
       if (!isActive) {
         return;
       }
 
       setIsLoaded(true);
       setSaveState('error');
+      if (err?.message?.includes('Integrity check failed')) {
+        Toast.show('Помилка цілісності: дані розділу підроблено або пошкоджено!', '⚠️');
+      }
     });
 
     return () => {
@@ -145,8 +149,11 @@ export function EditorScreen({ route }) {
 
   useFocusEffect(
     useCallback(() => {
-      loadChapter().catch(() => {
+      loadChapter().catch((err) => {
         setSaveState('error');
+        if (err?.message?.includes('Integrity check failed')) {
+          Toast.show('Помилка цілісності: дані розділу підроблено або пошкоджено!', '⚠️');
+        }
       });
 
       return undefined;

@@ -8,8 +8,13 @@
 
 - **Фреймворк:** React Native (Expo SDK)
 - **Мова:** JavaScript
-- **Автентифікація та криптографія:** bcryptjs (хешування PIN), expo-local-authentication (Touch ID / Face ID)
-- **База даних:** Expo SQLite (локальне збереження даних, auth_settings, offline-first)
+- **Автентифікація та криптографія:**
+  - **AEAD-шифрування розділів (Data-at-Rest):** AES-256-GCM (Galois/Counter Mode) з контролем цілісності через 128-бітний Auth Tag (`cryptoService.js`, `node-forge`)
+  - **Генерація випадкових векторів:** 96-бітний унікальний Nonce/IV на кожну операцію збереження (CSPRNG, усунення вразливості Nonce Reuse)
+  - **Управління ключами:** генерація 256-бітного симетричного ключа або деривація через PBKDF2 (HMAC-SHA256, 10 000+ ітерацій) на базі випадкової солі та PIN
+  - **Хешування PIN:** `bcryptjs` (cost factor 10, захист від брутфорсу з тайм-аутом)
+  - **Біометрія:** `expo-local-authentication` (Touch ID / Face ID)
+- **База даних:** Expo SQLite (локальне збереження даних, прозоре шифрування, auth_settings, offline-first)
 - **Файлові сервіси:** Expo FileSystem, Expo Sharing, JSZip
 - **Навігація:** React Navigation (Native Stack)
 - **Редактор тексту:** react-native-pell-rich-editor
@@ -20,12 +25,12 @@
 
 У папці `docs/` розміщено комплект документації, підготовлений для проєкту:
 
-- **[docs/requirements-spec-29148.md](docs/requirements-spec-29148.md)** — Специфікація вимог до програмного забезпечення за стандартом ISO/IEC/IEEE 29148:2018 (включаючи вимоги автентифікації та ABAC).
-- **[docs/architecture-spec-42010.md](docs/architecture-spec-42010.md)** — Архітектурний опис системи за стандартом ISO/IEC/IEEE 42010:2022 (модель ролей RBAC/ABAC).
+- **[docs/requirements-spec-29148.md](docs/requirements-spec-29148.md)** — Специфікація вимог до програмного забезпечення за стандартом ISO/IEC/IEEE 29148:2018 (вимоги автентифікації, ABAC, Data-at-Rest Encryption та заборона Nonce Reuse).
+- **[docs/architecture-spec-42010.md](docs/architecture-spec-42010.md)** — Архітектурний опис системи за стандартом ISO/IEC/IEEE 42010:2022 (Cryptographic Strategy, потік Presentation -> DAL -> cryptoService -> SQLite, формат `ENC:v1:AES-256-GCM:<IV>:<CT>:<TAG>` та життєвий цикл ключів).
 - **[docs/business_logic.md](docs/business_logic.md)** — Опис бізнес-логіки, сутностей та сценаріїв використання.
 - **[docs/security-policy.md](docs/security-policy.md)** — Політика безпеки (Security Policy) та технічні заходи захисту даних.
 - **[docs/privacy-policy.md](docs/privacy-policy.md)** — Політика конфіденційності (Privacy Policy).
-- **[docs/project-policy.md](docs/project-policy.md)** — Загальна політика проєкту та правила безпечної розробки (правила хешування PIN).
+- **[docs/project-policy.md](docs/project-policy.md)** — Загальна політика проєкту та правила безпечної розробки (заборона ECB/неавтентифікованого CTR, виключення hardcoded ключів, ротація ключів).
 - **[docs/threat-model.md](docs/threat-model.md)** — Модель загроз безпеки за методологією STRIDE (згідно з методологією та DFD-таблицями).
 
 ```
@@ -33,7 +38,10 @@
 ├── App.js                  # Головний файл додатку (керування авторизованим станом)
 ├── app.json                # Конфігурація Expo
 ├── package.json            # Залежності проєкту
-├── docs/                   # Документація
+├── lab3_crypto_test.js     # Дослідження ліміту bcrypt та стійкості проти SHA-256 (ЛР №3)
+├── lab4_crypto_test.js     # Дослідження класичних шифрів та атака на AES-CTR при Nonce Reuse (ЛР №4)
+├── test_crypto_service.js  # Верифікаційні тести модуля AEAD AES-256-GCM та контролю цілісності
+├── docs/                   # Проєктна документація
 │   ├── architecture-spec-42010.md
 │   ├── business_logic.md
 │   ├── privacy-policy.md
@@ -44,12 +52,12 @@
 └── src/                    # Вихідний код
     ├── components/         # UI-компоненти
     ├── constants/          # Маршрути та константи
-    ├── database/           # Модуль роботи з SQLite (client.js, auth_settings, is_locked)
+    ├── database/           # Модуль роботи з SQLite (client.js — прозоре AEAD-шифрування)
     ├── hooks/              # Хуки React
-    ├── localization/        # Локалізація (uk, en, de)
+    ├── localization/       # Локалізація (uk, en, de)
     ├── navigation/         # Навігація (AppNavigator.js)
-    ├── screens/            # Екрани додатку (LockScreen.js, SettingsScreen.js...)
-    ├── services/           # Сервіси (authService.js, bookExport.js)
+    ├── screens/            # Екрани додатку (EditorScreen.js, SettingsScreen.js...)
+    ├── services/           # Сервіси (cryptoService.js, authService.js, bookExport.js)
     └── theme/              # Теми та стилі
 ```
 
@@ -73,12 +81,19 @@
    npm install
    ```
 
-3. Запустити Expo:
+3. Запустити криптографічні тести:
+   ```bash
+   node lab4_crypto_test.js
+   node test_crypto_service.js
+   ```
+
+4. Запустити мобільний застосунок через Expo:
    ```bash
    npx expo start
    ```
 
-4. Запустити на пристрої чи емуляторі:
-   - `a` — для запуску в Android-емуляторі
-   - `w` — для запуску у веб-браузері
+5. Відкрити додаток:
+   - `a` — в Android-емуляторі
+   - `w` — у веб-браузері
    - або відсканувати QR-код у додатку Expo Go на смартфоні
+

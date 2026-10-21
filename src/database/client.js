@@ -1,4 +1,5 @@
 import * as SQLite from 'expo-sqlite';
+import { cryptoService } from '../services/cryptoService';
 
 let dbPromise;
 
@@ -110,7 +111,7 @@ export async function createBook(title, description = '', genre = '', coverUri =
 export async function listChaptersByBookId(bookId) {
   const db = await getDb();
 
-  return db.getAllAsync(
+  const rows = await db.getAllAsync(
     `
       SELECT
         id,
@@ -127,6 +128,24 @@ export async function listChaptersByBookId(bookId) {
       ORDER BY sort_order ASC, id ASC
     `,
     bookId,
+  );
+
+  return Promise.all(
+    rows.map(async (row) => {
+      let decryptedBody = row.body || '';
+      if (cryptoService.isEncrypted(row.body)) {
+        try {
+          decryptedBody = await cryptoService.decryptChapterContent(row.body);
+        } catch (e) {
+          decryptedBody = `[Помилка цілісності: ${e.message}]`;
+        }
+      }
+      return {
+        ...row,
+        body: decryptedBody,
+        content: decryptedBody,
+      };
+    }),
   );
 }
 
@@ -156,7 +175,7 @@ export async function createChapter(bookId, title) {
 export async function getChapterById(chapterId) {
   const db = await getDb();
 
-  return db.getFirstAsync(
+  const chapter = await db.getFirstAsync(
     `
       SELECT id, book_id, title, body, words_count, chars_count, COALESCE(is_locked, 0) AS is_locked, updated_at
       FROM chapters
@@ -164,6 +183,18 @@ export async function getChapterById(chapterId) {
     `,
     chapterId,
   );
+
+  if (chapter) {
+    if (chapter.body) {
+      const decrypted = await cryptoService.decryptChapterContent(chapter.body);
+      chapter.body = decrypted;
+      chapter.content = decrypted;
+    } else {
+      chapter.content = '';
+    }
+  }
+
+  return chapter;
 }
 
 export async function toggleChapterLock(chapterId, isLocked) {
@@ -213,13 +244,17 @@ export async function deleteAuthSetting(key) {
 export async function updateChapterContent(chapterId, body, wordsCount, charsCount) {
   const db = await getDb();
 
+  // Автентифіковане прозоре шифрування (AEAD AES-256-GCM) чутливого авторського тексту
+  // Метадані (wordsCount, charsCount) залишаються у відкритих стовпцях для швидкого пошуку/індексації
+  const storedPayload = await cryptoService.encryptChapterContent(body);
+
   await db.runAsync(
     `
       UPDATE chapters
       SET body = ?, words_count = ?, chars_count = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `,
-    body,
+    storedPayload,
     wordsCount,
     charsCount,
     chapterId,
@@ -338,3 +373,5 @@ export async function deleteBookCover(bookId) {
     bookId,
   );
 }
+
+export { cryptoService };
