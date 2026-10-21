@@ -8,7 +8,7 @@
 | Класифікація | Internal / Academic |
 | Останнє оновлення | 2026-10-07 |
 | Власник | Розробниця / Lead Developer |
-| Пов'язані документи | `docs/requirements-spec-29148.md`, `docs/architecture-spec-42010.md`, `docs/business_logic.md`, `docs/privacy-policy.md`, `docs/threat-model.md` |
+| Пов'язані документи | `docs/security-policy.md`, `docs/privacy-policy.md`, `docs/requirements-spec-29148.md`, `docs/architecture-spec-42010.md`, `docs/business_logic.md`, `docs/threat-model.md` |
 
 > Цей документ визначає обов'язкові правила безпечної розробки, архітектурні принципи, правила роботи з даними та порядок забезпечення цілісності для мобільного застосунку **Writer Editor** (React Native, Expo SDK, SQLite, offline-first). Політика є обов'язковою для дотримання всіма учасниками розробки та інструментами автоматизації.
 
@@ -95,7 +95,7 @@
 - **Defense in Depth (Глибока оборона):** Вхідні дані перевіряються та обробляються на кількох рівнях: валідація формату в UI, очищення в сервісах (`escapeXml`, `sanitizeFileName`) та параметризація на рівні Data Access Layer (`client.js`).
 - **Secure by Default & Fail Securely:** При збоях у роботі з базою даних або файловою системою застосунок не падає ("вилітає"), а повертається до безпечного стану з відображенням зрозумілого повідомлення користувачеві.
 - **Minimize Attack Surface:** Мінімізація зовнішніх npm-залежностей. Відсутність невикористовуваних нативних модулів або відкритих мережевих портів.
-- **No Secrets in Source Code:** Заборонено зберігати будь-які токени, ключі або секрети у вихідному коді чи в історії контролю версій Git. Якщо у майбутньому додаватимуться зовнішні сервіси, ключі мають передаватися через змінне оточення (`.env`).
+- **No Secrets in Source Code & Secure Password Hashing:** Заборонено зберігати будь-які токени, ключі, відкриті паролі чи PIN-коди у вихідному коді, конфігураційних файлах або базі даних SQLite. PIN-коди користувачів обробляються виключно через криптографічні солені хеші (алгоритм `bcryptjs`, cost factor ≥ 10).
 - **Explicit Trust Boundaries:** Чітке розмежування меж довіри між недовіреним вводом користувача, WebView-редактором Rich Text, пісочницею додатку та системним меню поширення файлів.
 
 ---
@@ -197,11 +197,12 @@
 
 ## Related Documents
 
-1. **[docs/requirements-spec-29148.md](requirements-spec-29148.md)** — Специфікація вимог до ПЗ (ISO/IEC/IEEE 29148:2018).
-2. **[docs/architecture-spec-42010.md](architecture-spec-42010.md)** — Архітектурний опис системи (ISO/IEC/IEEE 42010:2022).
-3. **[docs/business_logic.md](business_logic.md)** — Специфікація бізнес-логіки та сценаріїв використання.
-4. **[docs/privacy-policy.md](privacy-policy.md)** — Політика конфіденційності (Privacy Policy).
-5. **[docs/threat-model.md](threat-model.md)** — Модель загроз безпеки за методологією STRIDE.
+1. **[docs/security-policy.md](security-policy.md)** — Окремий файл політики безпеки (Security Policy).
+2. **[docs/privacy-policy.md](privacy-policy.md)** — Політика конфіденційності (Privacy Policy).
+3. **[docs/requirements-spec-29148.md](requirements-spec-29148.md)** — Специфікація вимог до ПЗ (ISO/IEC/IEEE 29148:2018).
+4. **[docs/architecture-spec-42010.md](architecture-spec-42010.md)** — Архітектурний опис системи (ISO/IEC/IEEE 42010:2022).
+5. **[docs/business_logic.md](business_logic.md)** — Специфікація бізнес-логіки та сценаріїв використання.
+6. **[docs/threat-model.md](threat-model.md)** — Модель загроз безпеки за методологією STRIDE.
 
 ---
 

@@ -35,6 +35,7 @@ export async function initializeDatabase() {
       sort_order INTEGER DEFAULT 0,
       words_count INTEGER DEFAULT 0,
       chars_count INTEGER DEFAULT 0,
+      is_locked INTEGER DEFAULT 0,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(book_id) REFERENCES books(id) ON DELETE CASCADE
     );
@@ -48,7 +49,19 @@ export async function initializeDatabase() {
       ended_at TEXT,
       FOREIGN KEY(chapter_id) REFERENCES chapters(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS auth_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
   `);
+
+  try {
+    await db.execAsync('ALTER TABLE chapters ADD COLUMN is_locked INTEGER DEFAULT 0;');
+  } catch (e) {
+    // Column already exists
+  }
 }
 
 export async function listBooks(searchText = '') {
@@ -107,6 +120,7 @@ export async function listChaptersByBookId(bookId) {
         words_count,
         chars_count,
         sort_order,
+        COALESCE(is_locked, 0) AS is_locked,
         updated_at
       FROM chapters
       WHERE book_id = ?
@@ -144,11 +158,55 @@ export async function getChapterById(chapterId) {
 
   return db.getFirstAsync(
     `
-      SELECT id, book_id, title, body, words_count, chars_count, updated_at
+      SELECT id, book_id, title, body, words_count, chars_count, COALESCE(is_locked, 0) AS is_locked, updated_at
       FROM chapters
       WHERE id = ?
     `,
     chapterId,
+  );
+}
+
+export async function toggleChapterLock(chapterId, isLocked) {
+  const db = await getDb();
+  const lockVal = isLocked ? 1 : 0;
+
+  await db.runAsync(
+    'UPDATE chapters SET is_locked = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+    lockVal,
+    chapterId,
+  );
+}
+
+export async function getAuthSetting(key) {
+  const db = await getDb();
+  const row = await db.getFirstAsync(
+    'SELECT value FROM auth_settings WHERE key = ?',
+    key,
+  );
+
+  return row ? row.value : null;
+}
+
+export async function setAuthSetting(key, value) {
+  const db = await getDb();
+
+  await db.runAsync(
+    `
+      INSERT INTO auth_settings (key, value, updated_at)
+      VALUES (?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
+    `,
+    key,
+    String(value),
+  );
+}
+
+export async function deleteAuthSetting(key) {
+  const db = await getDb();
+
+  await db.runAsync(
+    'DELETE FROM auth_settings WHERE key = ?',
+    key,
   );
 }
 

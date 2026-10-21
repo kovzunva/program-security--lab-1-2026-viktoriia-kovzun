@@ -39,18 +39,34 @@
 Систему сплановано у вигляді 5 ізольованих шарів:
 
 1. **Presentation Layer (Шар інтерфейсу користувача):**
-   - **Screens:** `LibraryScreen`, `BookDetailsScreen`, `BookMetaFormScreen`, `BookChaptersScreen`, `EditorScreen`, `BookStatsScreen`, `SettingsScreen`, `InfoScreen`.
-   - **Components:** `ConfirmActionModal`, `ExportFormatModal`, `PopupMenu`, `StatBadge`, `Toast`.
+   - **Screens:** `LockScreen`, `LibraryScreen`, `BookDetailsScreen`, `BookMetaFormScreen`, `BookChaptersScreen`, `EditorScreen`, `BookStatsScreen`, `SettingsScreen`, `InfoScreen`.
+   - **Components:** `ConfirmActionModal`, `ExportFormatModal`, `RenameChapterModal`, `PopupMenu`, `StatBadge`, `Toast`.
    - **Theme & Localization:** `ThemeProvider`, `LocalizationProvider`.
-2. **Navigation Layer (Шар навігації):**
-   - `AppNavigator` на базі React Navigation Stack для управління переходами між екранами.
-3. **Business Logic & Services Layer (Сервісний шар бізнес-логіки):**
+2. **Navigation & Session Layer (Шар навігації та управління сесією):**
+   - `AppNavigator` на базі React Navigation Stack.
+   - `App.js` контроль стану сесії `isAuthenticated` та автоблокування при згортанні додатка у фоновий режим (`AppState`).
+3. **Business Logic & Security Services Layer (Сервісний шар бізнес-логіки та безпеки):**
+   - `authService.js` — сервіс автентифікації: хешування PIN (bcryptjs, cost 10), перевірка спроб, захист від брутфорсу (блокування на 45 сек після 5 помилок) та біометрія (`expo-local-authentication`).
    - `bookExport.js` — генерація та експорт файлів `.docx` (через `jszip`) та `.txt`.
    - Утиліти обробки тексту: `richHtmlToPlainText`, `escapeXml`, `sanitizeFileName`, `countWords`.
 4. **Data Access Layer (Шар доступу до даних — DAL):**
-   - `src/database/client.js` — модуль ініціалізації SQLite, створення схем таблиць та виконання параметризованих запитів.
+   - `src/database/client.js` — модуль ініціалізації SQLite, створення схем таблиць (`books`, `chapters`, `writing_sessions`, `auth_settings`), атрибутів ABAC (`is_locked`) та виконання параметризованих запитів.
 5. **Native OS & Storage Layer (Шар нативних модулів ОС):**
-   - `expo-sqlite`, `expo-file-system`, `expo-sharing`, `expo-image-picker`.
+   - `expo-sqlite`, `expo-local-authentication`, `expo-file-system`, `expo-sharing`, `expo-image-picker`.
+
+---
+
+### 2.3 Модель керування доступом RBAC / ABAC
+
+Система підтримує комбіновану модель розмежування доступу:
+
+1. **RBAC (Role-Based Access Control — Модель ролей):**
+   - **Unauthenticated (Неавторизований):** Початковий стан додатку при ввімкненому PIN-захисті. Доступ до екранів бібліотеки та редактора заблоковано, відображається `LockScreen`.
+   - **Authenticated Author (Авторизований автор):** Стан після успішного введення майстер-PIN або проходження біометрії. Надає повний доступ до навігації додатком.
+
+2. **ABAC (Attribute-Based Access Control — Модель атрибутів):**
+   - Атрибут об'єкта `chapter.is_locked`: Окремий розділ може бути позначений як захищений (`is_locked = 1`).
+   - Контекстне правило доступу: При спробі відкрити розділ із `is_locked = 1` система запитує повторне підтвердження PIN-коду автора в модальному вікні перед відкриттям екрана редагування.
 
 ---
 

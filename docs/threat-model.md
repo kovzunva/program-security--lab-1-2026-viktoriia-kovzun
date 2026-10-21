@@ -7,7 +7,7 @@
 | Статус | Active / Draft |
 | Останнє оновлення | 2026-10-07 |
 | Власник | Розробниця / Lead Developer |
-| Пов'язані документи | `docs/architecture-spec-42010.md`, `docs/project-policy.md`, `docs/requirements-spec-29148.md`, `docs/privacy-policy.md` |
+| Пов'язані документи | `docs/security-policy.md`, `docs/privacy-policy.md`, `docs/architecture-spec-42010.md`, `docs/project-policy.md`, `docs/requirements-spec-29148.md` |
 
 ## Scope
 

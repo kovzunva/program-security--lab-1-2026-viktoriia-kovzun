@@ -1,5 +1,14 @@
 import { useCallback, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import {
+  Alert,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { ConfirmActionModal } from '../components/ConfirmActionModal';
 import { ScreenContainer } from '../components/ScreenContainer';
@@ -7,7 +16,15 @@ import { RenameChapterModal } from '../components/RenameChapterModal';
 import { t } from '../localization';
 import { ROUTES } from '../constants/routes';
 import { useAppTheme } from '../theme';
-import { createChapter, listChaptersByBookId, updateChapterTitle, deleteChapter } from '../database/client';
+import {
+  createChapter,
+  deleteChapter,
+  listChaptersByBookId,
+  toggleChapterLock,
+  updateChapterTitle,
+} from '../database/client';
+import { authService } from '../services/authService';
+import { LockScreen } from './LockScreen';
 
 export function BookChaptersScreen({ navigation, route }) {
   const { colors } = useAppTheme();
@@ -17,6 +34,10 @@ export function BookChaptersScreen({ navigation, route }) {
   const [renamingChapter, setRenamingChapter] = useState(null);
   const [isSavingRename, setIsSavingRename] = useState(false);
   const [chapterToDelete, setChapterToDelete] = useState(null);
+
+  // ABAC Chapter Protection state
+  const [lockedChapterToOpen, setLockedChapterToOpen] = useState(null);
+
   const bookId = route?.params?.bookId;
   const isWideLayout = width >= 760;
 
@@ -89,23 +110,73 @@ export function BookChaptersScreen({ navigation, route }) {
     }
   }, [chapterToDelete, refreshChapters]);
 
+  // Toggle chapter lock (ABAC)
+  const handleToggleLock = useCallback(async (chapter) => {
+    try {
+      const nextLockState = !chapter.is_locked;
+      await toggleChapterLock(chapter.id, nextLockState);
+      await refreshChapters();
+    } catch (e) {
+      Alert.alert('Помилка', 'Не вдалося змінити статус захисту розділу');
+    }
+  }, [refreshChapters]);
+
+  // Open Chapter with ABAC security check
+  const handleOpenChapter = useCallback(async (chapter) => {
+    if (chapter.is_locked) {
+      const pinEnabled = await authService.isPinEnabled();
+      if (pinEnabled) {
+        setLockedChapterToOpen(chapter);
+        return;
+      }
+    }
+    navigation.navigate(ROUTES.EDITOR, { chapterId: chapter.id });
+  }, [navigation]);
+
+  const handleUnlockSuccess = useCallback(() => {
+    if (lockedChapterToOpen) {
+      const targetId = lockedChapterToOpen.id;
+      setLockedChapterToOpen(null);
+      navigation.navigate(ROUTES.EDITOR, { chapterId: targetId });
+    }
+  }, [lockedChapterToOpen, navigation]);
+
   const renderChapterItem = (chapter) => (
     <Pressable
       key={chapter.id}
-      style={[styles.chapterItem, { backgroundColor: colors.surface, borderColor: colors.border }]}
-      onPress={() => navigation.navigate(ROUTES.EDITOR, { chapterId: chapter.id })}
+      style={[
+        styles.chapterItem,
+        { backgroundColor: colors.surface, borderColor: colors.border },
+        chapter.is_locked && styles.lockedChapterItem,
+      ]}
+      onPress={() => handleOpenChapter(chapter)}
       onLongPress={() => handleRenameChapter(chapter)}
     >
       <View style={[styles.chapterContent, isWideLayout && styles.chapterContentWide]}>
-        <Text style={[styles.chapterTitle, isWideLayout && styles.chapterTitleWide, { color: colors.textPrimary }]}>
-          {chapter.title || t('common.untitled')}
-        </Text>
+        <View style={styles.titleRow}>
+          {chapter.is_locked === 1 && <Text style={styles.lockIcon}>🔒 </Text>}
+          <Text style={[styles.chapterTitle, isWideLayout && styles.chapterTitleWide, { color: colors.textPrimary }]}>
+            {chapter.title || t('common.untitled')}
+          </Text>
+        </View>
         <Text style={[styles.chapterMeta, isWideLayout && styles.chapterMetaWide, { color: colors.textSecondary }]}>
           {`${t('common.words')}: ${chapter.words_count}`}
+          {chapter.is_locked === 1 ? ' • 🛡️ Захищено (ABAC)' : ''}
         </Text>
       </View>
 
       <View style={styles.chapterActions}>
+        {/* Toggle Lock Action */}
+        <Pressable
+          style={[
+            styles.actionIconButton,
+            { backgroundColor: chapter.is_locked ? '#FFF3E0' : colors.surface },
+          ]}
+          onPress={() => handleToggleLock(chapter)}
+        >
+          <Text style={{ fontSize: 16 }}>{chapter.is_locked ? '🔒' : '🔓'}</Text>
+        </Pressable>
+
         <Pressable
           style={[styles.actionIconButton, { backgroundColor: colors.accentMuted }]}
           onPress={() => handleRenameChapter(chapter)}
@@ -161,6 +232,21 @@ export function BookChaptersScreen({ navigation, route }) {
         onConfirm={handleConfirmDeleteChapter}
         onClose={() => setChapterToDelete(null)}
       />
+
+      {/* Modal LockScreen for opening locked chapter */}
+      <Modal
+        visible={!!lockedChapterToOpen}
+        animationType="slide"
+        onRequestClose={() => setLockedChapterToOpen(null)}
+      >
+        <LockScreen
+          title="Захищений розділ"
+          subtitle={`Введіть PIN-код для відкриття "${lockedChapterToOpen?.title}"`}
+          allowCancel={true}
+          onCancel={() => setLockedChapterToOpen(null)}
+          onSuccess={handleUnlockSuccess}
+        />
+      </Modal>
     </ScreenContainer>
   );
 }
@@ -179,12 +265,23 @@ const styles = StyleSheet.create({
     padding: 12,
     alignItems: 'center',
   },
+  lockedChapterItem: {
+    borderLeftWidth: 4,
+    borderLeftColor: '#FF9800',
+  },
   chapterContent: {
     flex: 1,
   },
   chapterContentWide: {
     alignItems: 'center',
     flexDirection: 'row',
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  lockIcon: {
+    fontSize: 14,
   },
   chapterTitle: {
     fontSize: 15,

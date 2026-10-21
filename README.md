@@ -8,7 +8,8 @@
 
 - **Фреймворк:** React Native (Expo SDK)
 - **Мова:** JavaScript
-- **База даних:** Expo SQLite (локальне збереження даних, offline-first)
+- **Автентифікація та криптографія:** bcryptjs (хешування PIN), expo-local-authentication (Touch ID / Face ID)
+- **База даних:** Expo SQLite (локальне збереження даних, auth_settings, offline-first)
 - **Файлові сервіси:** Expo FileSystem, Expo Sharing, JSZip
 - **Навігація:** React Navigation (Native Stack)
 - **Редактор тексту:** react-native-pell-rich-editor
@@ -19,16 +20,17 @@
 
 У папці `docs/` розміщено комплект документації, підготовлений для проєкту:
 
-- **[docs/requirements-spec-29148.md](docs/requirements-spec-29148.md)** — Специфікація вимог до програмного забезпечення за стандартом ISO/IEC/IEEE 29148:2018.
-- **[docs/architecture-spec-42010.md](docs/architecture-spec-42010.md)** — Архітектурний опис системи за стандартом ISO/IEC/IEEE 42010:2022.
+- **[docs/requirements-spec-29148.md](docs/requirements-spec-29148.md)** — Специфікація вимог до програмного забезпечення за стандартом ISO/IEC/IEEE 29148:2018 (включаючи вимоги автентифікації та ABAC).
+- **[docs/architecture-spec-42010.md](docs/architecture-spec-42010.md)** — Архітектурний опис системи за стандартом ISO/IEC/IEEE 42010:2022 (модель ролей RBAC/ABAC).
 - **[docs/business_logic.md](docs/business_logic.md)** — Опис бізнес-логіки, сутностей та сценаріїв використання.
-- **[docs/project-policy.md](docs/project-policy.md)** — Політика безпеки проєкту та правила безпечної розробки (відповідно до шаблону політики безпеки).
+- **[docs/security-policy.md](docs/security-policy.md)** — Політика безпеки (Security Policy) та технічні заходи захисту даних.
 - **[docs/privacy-policy.md](docs/privacy-policy.md)** — Політика конфіденційності (Privacy Policy).
+- **[docs/project-policy.md](docs/project-policy.md)** — Загальна політика проєкту та правила безпечної розробки (правила хешування PIN).
 - **[docs/threat-model.md](docs/threat-model.md)** — Модель загроз безпеки за методологією STRIDE (згідно з методологією та DFD-таблицями).
 
 ```
 .
-├── App.js                  # Головний файл додатку
+├── App.js                  # Головний файл додатку (керування авторизованим станом)
 ├── app.json                # Конфігурація Expo
 ├── package.json            # Залежності проєкту
 ├── docs/                   # Документація
@@ -37,16 +39,17 @@
 │   ├── privacy-policy.md
 │   ├── project-policy.md
 │   ├── requirements-spec-29148.md
+│   ├── security-policy.md
 │   └── threat-model.md
 └── src/                    # Вихідний код
     ├── components/         # UI-компоненти
     ├── constants/          # Маршрути та константи
-    ├── database/           # Модуль роботи з SQLite (client.js)
+    ├── database/           # Модуль роботи з SQLite (client.js, auth_settings, is_locked)
     ├── hooks/              # Хуки React
-    ├── localization/        # Локалізація (uk, en)
-    ├── navigation/         # Навігація
-    ├── screens/            # Екрани додатку
-    ├── services/           # Сервіси експорту
+    ├── localization/        # Локалізація (uk, en, de)
+    ├── navigation/         # Навігація (AppNavigator.js)
+    ├── screens/            # Екрани додатку (LockScreen.js, SettingsScreen.js...)
+    ├── services/           # Сервіси (authService.js, bookExport.js)
     └── theme/              # Теми та стилі
 ```
 
