@@ -97,7 +97,12 @@ export function BookDetailsScreen({ navigation, route }) {
         errorCode: error?.code,
         rawError: String(error),
       });
-      Alert.alert(t('bookStats.exportError'));
+      if (error?.code === 'LICENSE_REQUIRED') {
+        setExportModalVisible(false);
+        Alert.alert(t('license.proRequiredTitle'), t('license.proRequiredDocx'));
+      } else {
+        Alert.alert(t('bookStats.exportError'));
+      }
     } finally {
       setIsExporting(false);
     }

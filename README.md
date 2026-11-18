@@ -41,6 +41,9 @@
 ├── lab3_crypto_test.js     # Дослідження ліміту bcrypt та стійкості проти SHA-256 (ЛР №3)
 ├── lab4_crypto_test.js     # Дослідження класичних шифрів та атака на AES-CTR при Nonce Reuse (ЛР №4)
 ├── test_crypto_service.js  # Верифікаційні тести модуля AEAD AES-256-GCM та контролю цілісності
+├── test_license_integrity.js # Тести MDC SHA-256, підпису ліцензії та Freemium (ЛР №5)
+├── lab5_obfuscation_test.js # Дослідження обфускації коду (ЛР №5)
+├── tools/                  # Dev-утиліти (sign_demo_license.js — видача демо-ліцензії без збереження приватного ключа)
 ├── docs/                   # Проєктна документація
 │   ├── architecture-spec-42010.md
 │   ├── business_logic.md
@@ -57,7 +60,7 @@
     ├── localization/       # Локалізація (uk, en, de)
     ├── navigation/         # Навігація (AppNavigator.js)
     ├── screens/            # Екрани додатку (EditorScreen.js, SettingsScreen.js...)
-    ├── services/           # Сервіси (cryptoService.js, authService.js, bookExport.js)
+    ├── services/           # Сервіси (cryptoService.js, authService.js, bookExport.js, licenseIntegrityService.js)
     └── theme/              # Теми та стилі
 ```
 
@@ -85,6 +88,8 @@
    ```bash
    node lab4_crypto_test.js
    node test_crypto_service.js
+   node lab5_obfuscation_test.js
+   node test_license_integrity.js
    ```
 
 4. Запустити мобільний застосунок через Expo:

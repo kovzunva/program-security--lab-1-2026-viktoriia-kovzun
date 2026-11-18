@@ -63,6 +63,10 @@ export const en = {
     saved: 'Saved',
     error: 'Operation failed',
   },
+  license: {
+    proRequiredTitle: 'Pro license required',
+    proRequiredDocx: 'Exporting to .docx is available in the Pro tier only. Activate a Pro key in Settings → "License & integrity". Exporting to .txt remains free.',
+  },
   alerts: {
     info: 'Information',
     confirmation: 'Confirmation',

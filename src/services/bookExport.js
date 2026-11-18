@@ -2,6 +2,12 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { Share } from 'react-native';
 import JSZip from 'jszip';
+import {
+  FEATURES,
+  assertFeature,
+  buildHashManifest,
+  computeSha256Hex,
+} from './licenseIntegrityService';
 
 function serializeError(error) {
   if (!error) {
@@ -205,6 +211,10 @@ async function shareFile(fileUri) {
 }
 
 export async function exportBook(book, chapters, format) {
+  // Freemium: .docx вимагає Pro-ліцензії (перевірка підпису ліцензії виконується при кожному експорті).
+  // Кидає LicenseRequiredError (code 'LICENSE_REQUIRED') ДО будь-якого запису на диск.
+  await assertFeature(format === 'docx' ? FEATURES.EXPORT_DOCX : FEATURES.EXPORT_TXT);
+
   const fileBaseName = sanitizeFileName(book.title);
   const extension = format === 'docx' ? 'docx' : 'txt';
   const baseDirectory = FileSystem.documentDirectory || FileSystem.cacheDirectory;
@@ -222,17 +232,31 @@ export async function exportBook(book, chapters, format) {
   const fileUri = `${baseDirectory}${fileBaseName}.${extension}`;
 
   try {
+    // MDC: SHA-256 обчислюється від вмісту ДО запису та звіряється зі збереженим файлом ПІСЛЯ запису.
+    let content;
+    let encoding;
     if (format === 'docx') {
-      const base64 = await buildDocxBase64(book, chapters);
-      await FileSystem.writeAsStringAsync(fileUri, base64, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
+      content = await buildDocxBase64(book, chapters);
+      encoding = FileSystem.EncodingType.Base64;
     } else {
-      const text = buildBookText(book, chapters);
-      await FileSystem.writeAsStringAsync(fileUri, text, {
-        encoding: FileSystem.EncodingType.UTF8,
-      });
+      content = buildBookText(book, chapters);
+      encoding = FileSystem.EncodingType.UTF8;
     }
+
+    const expectedHash = computeSha256Hex(content);
+    await FileSystem.writeAsStringAsync(fileUri, content, { encoding });
+
+    const writtenContent = await FileSystem.readAsStringAsync(fileUri, { encoding });
+    if (computeSha256Hex(writtenContent) !== expectedHash) {
+      throw new Error('Integrity check failed: exported file hash mismatch');
+    }
+
+    // Sidecar-файл `<file>.sha256` (формат, сумісний з `sha256sum -c`) для зовнішньої перевірки цілісності.
+    await FileSystem.writeAsStringAsync(
+      `${fileUri}.sha256`,
+      buildHashManifest(content, `${fileBaseName}.${extension}`),
+      { encoding: FileSystem.EncodingType.UTF8 },
+    );
 
     const fileInfo = await FileSystem.getInfoAsync(fileUri, { size: true });
     await shareFile(fileUri);

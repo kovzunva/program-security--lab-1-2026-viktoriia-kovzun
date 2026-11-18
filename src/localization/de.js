@@ -63,6 +63,10 @@ export const de = {
     saved: 'Gespeichert',
     error: 'Fehler bei der Aktion',
   },
+  license: {
+    proRequiredTitle: 'Pro-Lizenz erforderlich',
+    proRequiredDocx: 'Der Export als .docx ist nur im Pro-Tarif verfügbar. Aktivieren Sie einen Pro-Schlüssel unter Einstellungen → „Lizenz & Integrität“. Der Export als .txt bleibt kostenlos.',
+  },
   alerts: {
     info: 'Information',
     confirmation: 'Bestatigung',

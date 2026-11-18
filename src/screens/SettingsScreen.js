@@ -15,7 +15,14 @@ import { Toast } from '../components/Toast';
 import { t, useLocalization } from '../localization';
 import { authService } from '../services/authService';
 import { cryptoService } from '../services/cryptoService';
+import { DEMO_PRO_LICENSE_TOKEN, licenseIntegrityService } from '../services/licenseIntegrityService';
 import { useAppTheme } from '../theme';
+
+const LICENSE_REASONS = {
+  MALFORMED: 'Ключ має некоректний формат',
+  BAD_SIGNATURE: 'Цифровий підпис ліцензії недійсний',
+  EXPIRED: 'Термін дії ліцензії завершився',
+};
 
 function LanguageRadio({ label, selected, onPress, colors }) {
   return (
@@ -40,6 +47,12 @@ export function SettingsScreen() {
   const [hasBiometricsHardware, setHasBiometricsHardware] = useState(false);
   const [isEncryptionActive, setIsEncryptionActive] = useState(true);
 
+  // License & Integrity States
+  const [licenseStatus, setLicenseStatus] = useState({ tier: 'FREE', valid: true });
+  const [licenseKeyInput, setLicenseKeyInput] = useState('');
+  const [integrityReport, setIntegrityReport] = useState(null);
+  const [isCheckingIntegrity, setIsCheckingIntegrity] = useState(false);
+
   // Modal States
   const [modalMode, setModalMode] = useState(null); // 'create' | 'disable' | 'change'
   const [oldPin, setOldPin] = useState('');
@@ -57,6 +70,7 @@ export function SettingsScreen() {
     setIsBiometricsEnabled(bioActive);
     setHasBiometricsHardware(bioHardware);
     setIsEncryptionActive(encActive);
+    setLicenseStatus(await licenseIntegrityService.getLicenseStatus());
   }, []);
 
   useEffect(() => {
@@ -111,6 +125,40 @@ export function SettingsScreen() {
       value ? 'AEAD-шифрування рукописів увімкнено' : 'Шифрування рукописів вимкнено',
       '🔐',
     );
+  };
+
+  // Activate signed license key (public-key signature verification)
+  const handleActivateLicense = async (token) => {
+    const result = await licenseIntegrityService.activateLicenseToken(token);
+    if (result.success) {
+      setLicenseStatus(await licenseIntegrityService.getLicenseStatus());
+      setLicenseKeyInput('');
+      Toast.show('Pro-ліцензію активовано: підпис перевірено', '⭐');
+    } else {
+      Toast.show(LICENSE_REASONS[result.reason] || 'Ліцензію відхилено', '⛔');
+    }
+  };
+
+  const handleResetLicense = async () => {
+    await licenseIntegrityService.deactivateLicense();
+    setLicenseStatus(await licenseIntegrityService.getLicenseStatus());
+    Toast.show('Повернено безкоштовний тариф Free', 'ℹ️');
+  };
+
+  // Integrity check: storage (AEAD auth tags) + runtime configuration
+  const handleCheckIntegrity = async () => {
+    setIsCheckingIntegrity(true);
+    try {
+      const storage = await licenseIntegrityService.verifyStorageIntegrity();
+      const env = licenseIntegrityService.verifyEnvironmentIntegrity();
+      setIntegrityReport({ storage, env });
+      const allOk = storage.ok && env.ok;
+      Toast.show(allOk ? 'Перевірку цілісності пройдено' : 'Виявлено порушення цілісності!', allOk ? '✅' : '⚠️');
+    } catch (e) {
+      setIntegrityReport({ error: e.message });
+    } finally {
+      setIsCheckingIntegrity(false);
+    }
   };
 
   // Open Change PIN modal
@@ -265,6 +313,96 @@ export function SettingsScreen() {
               trackColor={{ false: '#CFCFCF', true: colors.accentMuted }}
             />
           </View>
+        </View>
+
+        {/* License & Integrity Section (ЛР №5) */}
+        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>🧾 Ліцензія та цілісність</Text>
+          </View>
+
+          <Text style={[styles.settingTitle, { color: colors.textPrimary }]}>
+            Поточний тариф: {licenseStatus.tier === 'PRO' ? '⭐ Pro' : 'Free'}
+          </Text>
+          <Text style={[styles.settingDesc, { color: colors.textSecondary }]}>
+            {licenseStatus.tier === 'PRO'
+              ? `Діє до ${String(licenseStatus.license?.expiresAt || '').slice(0, 10)}. Доступні: експорт .docx, детальна статистика, шифрування розділів.`
+              : 'Доступні: редагування книг та експорт у .txt. Pro додає експорт .docx, детальну статистику та шифрування розділів.'}
+          </Text>
+          {licenseStatus.valid === false && (
+            <Text style={styles.modalError}>
+              Збережену ліцензію відхилено ({LICENSE_REASONS[licenseStatus.reason] || licenseStatus.reason}). Застосовано тариф Free.
+            </Text>
+          )}
+
+          <TextInput
+            style={[styles.input, { color: colors.textPrimary, borderColor: colors.border, marginTop: 10 }]}
+            value={licenseKeyInput}
+            onChangeText={setLicenseKeyInput}
+            placeholder="Підписаний ліцензійний ключ (base64)"
+            placeholderTextColor={colors.textSecondary}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          <Pressable
+            style={({ pressed }) => [
+              styles.actionButton,
+              { backgroundColor: pressed ? colors.border : colors.background, borderColor: colors.border },
+            ]}
+            onPress={() => handleActivateLicense(licenseKeyInput)}
+          >
+            <Text style={[styles.actionButtonText, { color: colors.accent }]}>🔑 Активувати введений ключ</Text>
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [
+              styles.actionButton,
+              { backgroundColor: pressed ? colors.border : colors.background, borderColor: colors.border },
+            ]}
+            onPress={() => handleActivateLicense(DEMO_PRO_LICENSE_TOKEN)}
+          >
+            <Text style={[styles.actionButtonText, { color: colors.accent }]}>⭐ Активувати тестовий Pro-ключ</Text>
+          </Pressable>
+          {licenseStatus.tier === 'PRO' && (
+            <Pressable
+              style={({ pressed }) => [
+                styles.actionButton,
+                { backgroundColor: pressed ? colors.border : colors.background, borderColor: colors.border },
+              ]}
+              onPress={handleResetLicense}
+            >
+              <Text style={[styles.actionButtonText, { color: colors.textSecondary }]}>Скинути до Free</Text>
+            </Pressable>
+          )}
+
+          <Pressable
+            style={({ pressed }) => [
+              styles.actionButton,
+              { backgroundColor: pressed ? colors.border : colors.background, borderColor: colors.border, marginTop: 16 },
+            ]}
+            onPress={handleCheckIntegrity}
+            disabled={isCheckingIntegrity}
+          >
+            <Text style={[styles.actionButtonText, { color: colors.accent }]}>
+              {isCheckingIntegrity ? 'Перевірка…' : '🛡️ Перевірити цілісність сховища'}
+            </Text>
+          </Pressable>
+
+          {integrityReport && (
+            <View style={{ marginTop: 10 }}>
+              {integrityReport.error ? (
+                <Text style={styles.modalError}>Помилка перевірки: {integrityReport.error}</Text>
+              ) : (
+                <>
+                  <Text style={[styles.settingDesc, { color: integrityReport.storage.ok ? colors.textSecondary : '#E53935' }]}>
+                    Сховище: перевірено зашифрованих розділів (AEAD) — {integrityReport.storage.checked}, пошкоджено — {integrityReport.storage.failed.length}
+                  </Text>
+                  <Text style={[styles.settingDesc, { color: integrityReport.env.ok ? colors.textSecondary : '#E53935' }]}>
+                    Конфігурація ліцензування: {integrityReport.env.ok ? 'без змін' : `порушено (${integrityReport.env.issues.join(', ')})`}
+                  </Text>
+                </>
+              )}
+            </View>
+          )}
         </View>
 
         {/* Theme Settings */}
