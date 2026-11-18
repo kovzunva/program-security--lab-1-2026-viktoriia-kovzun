@@ -11,12 +11,16 @@
  * - IDOR: ownerId записується з token.sub, вибірка завжди фільтрується за ownerId === token.sub.
  * - Транспорт: у production — лише TLS 1.3 (TLS_KEY/TLS_CERT), HSTS.
  *
+ * Журнал та моніторинг (ЛР №7-8): кожен запит дістає requestId (UUID, також у заголовку X-Request-Id), по завершенні
+ *   пишеться один структурований запис JSON Lines (logs/security.log); GET /api/admin/metrics (лише роль ADMIN).
+ *
  * Запуск: node server/apiServer.js 
  */
 const http = require('http');
 const https = require('https');
 const fs = require('fs');
 const crypto = require('crypto');
+const { createLogger, createMonitor } = require('./logger.js');
 
 const ACCESS_TTL_SEC = 15 * 60;
 const REFRESH_TTL_SEC = 7 * 24 * 3600;
@@ -79,8 +83,10 @@ const DUMMY_HASH = hashPassword('dummy-password'); // вирівнює час в
 
 function seedUsers() {
   return new Map([
-    ['u-alice', { id: 'u-alice', username: 'alice', tier: 'FREE', passwordHash: hashPassword('alice-pass-1') }],
-    ['u-bob', { id: 'u-bob', username: 'bob', tier: 'PRO', passwordHash: hashPassword('bob-pass-1') }],
+    ['u-alice', { id: 'u-alice', username: 'alice', tier: 'FREE', role: 'USER', passwordHash: hashPassword('alice-pass-1') }],
+    ['u-bob', { id: 'u-bob', username: 'bob', tier: 'PRO', role: 'USER', passwordHash: hashPassword('bob-pass-1') }],
+    // демо-адміністратор для /api/admin/metrics (у production користувачі мають надходити з захищеного сховища)
+    ['u-admin', { id: 'u-admin', username: 'admin', tier: 'PRO', role: 'ADMIN', passwordHash: hashPassword('admin-pass-1') }],
   ]);
 }
 
@@ -91,6 +97,9 @@ function createApp(options = {}) {
   const refreshTtl = options.refreshTtlSec || REFRESH_TTL_SEC;
   const nowSec = options.now || (() => Math.floor(Date.now() / 1000));
   const production = options.production ?? process.env.NODE_ENV === 'production';
+  // за замовчуванням журнал "тихий" (тести/імпорт); у CLI-режимі передається повноцінний логер
+  const logger = options.logger || createLogger({ file: false, console: false });
+  const monitor = options.monitor || createMonitor(logger);
 
   const users = options.users || seedUsers();
   const refreshTokens = new Map(); // sha256(token) -> { userId, familyId, exp, used }
@@ -102,7 +111,7 @@ function createApp(options = {}) {
     const iat = nowSec();
     // tier читається із серверного сховища користувача на момент видачі
     const access = signToken(
-      { sub: user.id, tier: user.tier, typ: 'access', iat, exp: iat + accessTtl, jti: crypto.randomUUID() },
+      { sub: user.id, tier: user.tier, role: user.role || 'USER', typ: 'access', iat, exp: iat + accessTtl, jti: crypto.randomUUID() },
       secret
     );
     const refresh = crypto.randomBytes(32).toString('base64url');
@@ -111,6 +120,10 @@ function createApp(options = {}) {
   }
 
   function send(res, status, body, extra = {}) {
+    if (res.ctx) {
+      res.ctx.status = status;
+      extra = { 'X-Request-Id': res.ctx.requestId, ...extra };
+    }
     const data = JSON.stringify(body);
     res.writeHead(status, {
       'Content-Type': 'application/json; charset=utf-8',
@@ -122,7 +135,10 @@ function createApp(options = {}) {
     });
     res.end(data);
   }
-  const fail = (res, status, code, extra) => send(res, status, { error: code }, extra);
+  const fail = (res, status, code, extra) => {
+    if (res.ctx) res.ctx.errorCode = code;
+    return send(res, status, { error: code }, extra);
+  };
 
   function readJson(req) {
     return new Promise((resolve, reject) => {
@@ -158,7 +174,9 @@ function createApp(options = {}) {
       return null;
     }
     try {
-      return verifyToken(m[1], secret, nowSec());
+      const claims = verifyToken(m[1], secret, nowSec());
+      if (res.ctx) res.ctx.actor = claims.sub;
+      return claims;
     } catch (e) {
       fail(res, 401, 'INVALID_TOKEN', { 'WWW-Authenticate': `Bearer error="invalid_token", error_description="${e.message}"` });
       return null;
@@ -170,8 +188,13 @@ function createApp(options = {}) {
     if (typeof username !== 'string' || typeof password !== 'string' || username.length > 64 || password.length > 128) {
       return fail(res, 400, 'BAD_REQUEST');
     }
+    const ctx = res.ctx;
+    ctx.context.username = username; // ідентифікатор, не секрет; пароль у журнал не потрапляє
     const rec = loginFails.get(username) || { count: 0, lockedUntil: 0 };
-    if (rec.lockedUntil > Date.now()) return fail(res, 429, 'TOO_MANY_ATTEMPTS', { 'Retry-After': '60' });
+    if (rec.lockedUntil > Date.now()) {
+      monitor.recordFailedLogin({ ip: ctx.ip, username, requestId: ctx.requestId });
+      return fail(res, 429, 'TOO_MANY_ATTEMPTS', { 'Retry-After': '60' });
+    }
 
     const user = [...users.values()].find((u) => u.username === username);
     const ok = checkPassword(password, user ? user.passwordHash : DUMMY_HASH) && Boolean(user);
@@ -182,9 +205,12 @@ function createApp(options = {}) {
         rec.lockedUntil = Date.now() + LOGIN_LOCK_MS;
       }
       loginFails.set(username, rec);
+      monitor.recordFailedLogin({ ip: ctx.ip, username, requestId: ctx.requestId });
       return fail(res, 401, 'INVALID_CREDENTIALS'); // однакова відповідь: без user enumeration
     }
     loginFails.delete(username);
+    monitor.recordSuccessfulLogin({ ip: ctx.ip, username });
+    ctx.actor = user.id;
     return send(res, 200, issueTokens(user));
   }
 
@@ -196,6 +222,11 @@ function createApp(options = {}) {
     if (rec.used) {
       // Replay: уже використаний токен => імовірна крадіжка, відкликаємо всю сім'ю токенів
       revokedFamilies.add(rec.familyId);
+      logger.warning({
+        requestId: res.ctx.requestId, component: 'AuthService', actor: { id: rec.userId, ip: res.ctx.ip },
+        action: 'auth.refresh_replay_detected', resource: '/api/auth/refresh', outcome: 'DENIED',
+        context: { familyId: rec.familyId, refresh_token: token },
+      });
       return fail(res, 401, 'REFRESH_TOKEN_REUSED');
     }
     const user = users.get(rec.userId);
@@ -229,17 +260,32 @@ function createApp(options = {}) {
       updatedAt: new Date(nowSec() * 1000).toISOString(),
     };
     books.set(id, record);
+    res.ctx.resource = `book:${id}`;
+    res.ctx.context.version = record.version;
     return send(res, existing ? 200 : 201, { id, version: record.version, updatedAt: record.updatedAt });
   }
 
   async function handleDocxCloud(req, res, claims) {
     // RBAC: роль з підписаного токена; клієнтські прапорці ігноруються
-    if (claims.tier !== 'PRO') return fail(res, 403, 'PRO_REQUIRED');
+    if (claims.tier !== 'PRO') {
+      res.ctx.context.requiredTier = 'PRO';
+      res.ctx.context.actualTier = claims.tier;
+      return fail(res, 403, 'PRO_REQUIRED');
+    }
     const body = await readJson(req);
     const book = typeof body.bookId === 'string' ? books.get(body.bookId) : null;
     if (!book || book.ownerId !== claims.sub) return fail(res, 404, 'NOT_FOUND');
+    res.ctx.resource = `book:${book.id}`;
     return send(res, 202, { jobId: crypto.randomUUID(), bookId: book.id, format: 'docx', status: 'queued' });
   }
+
+  function handleMetrics(req, res, claims) {
+    // RBAC: лише ADMIN (роль із підписаного токена, не з запиту)
+    if (claims.role !== 'ADMIN') return fail(res, 403, 'ADMIN_REQUIRED');
+    return send(res, 200, monitor.snapshot());
+  }
+
+  const COMPONENTS = { auth: 'AuthService', sync: 'SyncAPI', export: 'ExportService', admin: 'MonitoringService' };
 
   async function route(req, res) {
     const path = new URL(req.url, 'http://localhost').pathname;
@@ -251,9 +297,11 @@ function createApp(options = {}) {
         return handleRefresh(req, res);
       case 'GET /api/sync/books':
       case 'POST /api/sync/books':
-      case 'POST /api/export/docx-cloud': {
+      case 'POST /api/export/docx-cloud':
+      case 'GET /api/admin/metrics': {
         const claims = authenticate(req, res);
         if (!claims) return undefined;
+        if (key === 'GET /api/admin/metrics') return handleMetrics(req, res, claims);
         if (key === 'GET /api/sync/books') return handleGetBooks(req, res, claims);
         if (key === 'POST /api/sync/books') return handlePostBook(req, res, claims);
         return handleDocxCloud(req, res, claims);
@@ -263,15 +311,49 @@ function createApp(options = {}) {
     }
   }
 
+  /** Один структурований запис на запит; рівень і outcome виводяться зі статусу відповіді. */
+  function logRequest(res) {
+    const c = res.ctx;
+    const status = c.status || 0;
+    const outcome = status >= 500 || status === 0 ? 'ERROR' : [401, 403, 404, 429].includes(status) ? 'DENIED' : status >= 400 ? 'ERROR' : 'SUCCESS';
+    const level = status >= 500 ? 'ERROR' : [401, 403, 429].includes(status) ? 'WARNING' : 'INFO';
+    monitor.bump(status);
+    logger.log(level, {
+      requestId: c.requestId,
+      component: c.component,
+      actor: { id: c.actor, ip: c.ip },
+      action: c.action,
+      resource: c.resource,
+      outcome,
+      context: { ...c.context, method: c.method, status, durationMs: Date.now() - c.startedAt, ...(c.errorCode ? { error: c.errorCode } : {}) },
+    });
+  }
+
   const handler = (req, res) => {
+    const url = new URL(req.url, 'http://localhost');
+    const area = url.pathname.split('/')[2];
+    // requestId генерується сервером (заголовок клієнта не довіряємо — інакше можливий log forging)
+    res.ctx = {
+      requestId: crypto.randomUUID(),
+      ip: req.socket.remoteAddress || null,
+      actor: 'anonymous',
+      component: COMPONENTS[area] || 'HttpServer',
+      action: `${req.method} ${url.pathname}`,
+      resource: url.pathname,
+      method: req.method,
+      startedAt: Date.now(),
+      context: {},
+    };
+    res.once('close', () => logRequest(res)); // 'close' спрацьовує і при обриві з'єднання
     route(req, res).catch((e) => {
       if (res.headersSent) return;
       if (e && e.status) return fail(res, e.status, e.message);
+      res.ctx.context.exception = e && e.message; // деталі лише в журнал; клієнту — загальна відповідь
       return fail(res, 500, 'INTERNAL_ERROR');
     });
   };
 
-  return { handler, secret, _state: { users, books, refreshTokens, revokedFamilies } };
+  return { handler, secret, logger, monitor, _state: { users, books, refreshTokens, revokedFamilies } };
 }
 
 function createServer(options = {}) {
@@ -293,7 +375,10 @@ function createServer(options = {}) {
 if (require.main === module) {
   if (!process.env.JWT_SECRET) console.warn('[WARN] JWT_SECRET не задано: використано тимчасовий ключ (токени не переживуть перезапуск).');
   const port = Number(process.env.PORT) || 3000;
-  createServer().listen(port, () => console.log(`Writer Editor API listening on :${port}`));
+  const logger = createLogger();
+  createServer({ logger }).listen(port, () => {
+    logger.info({ component: 'HttpServer', action: 'server.start', resource: `:${port}`, outcome: 'SUCCESS', context: { port, production: process.env.NODE_ENV === 'production' } });
+  });
 }
 
 module.exports = { createServer, createApp, signToken, verifyToken, ACCESS_TTL_SEC, REFRESH_TTL_SEC };

@@ -39,3 +39,8 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# ЛР №7-8: робочі дані, журнали та резервні копії не комітяться
+/data/
+/logs/
+/backups/
