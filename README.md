@@ -43,6 +43,9 @@
 ├── test_crypto_service.js  # Верифікаційні тести модуля AEAD AES-256-GCM та контролю цілісності
 ├── test_license_integrity.js # Тести MDC SHA-256, підпису ліцензії та Freemium (ЛР №5)
 ├── lab5_obfuscation_test.js # Дослідження обфускації коду (ЛР №5)
+├── test_client_server.js   # Тести серверної авторизації, JWT, IDOR, RBAC, ротації токенів та клієнта (ЛР №6)
+├── server/                 # API-прототип (ЛР №6)
+│   └── apiServer.js        # Node http-сервер: /api/auth/*, /api/sync/books, /api/export/docx-cloud
 ├── tools/                  # Dev-утиліти (sign_demo_license.js — видача демо-ліцензії без збереження приватного ключа)
 ├── docs/                   # Проєктна документація
 │   ├── architecture-spec-42010.md
@@ -60,7 +63,7 @@
     ├── localization/       # Локалізація (uk, en, de)
     ├── navigation/         # Навігація (AppNavigator.js)
     ├── screens/            # Екрани додатку (EditorScreen.js, SettingsScreen.js...)
-    ├── services/           # Сервіси (cryptoService.js, authService.js, bookExport.js, licenseIntegrityService.js)
+    ├── services/           # Сервіси (cryptoService.js, authService.js, bookExport.js, licenseIntegrityService.js, apiClient.js — HTTP-клієнт з Bearer/refresh)
     └── theme/              # Теми та стилі
 ```
 
@@ -90,6 +93,7 @@
    node test_crypto_service.js
    node lab5_obfuscation_test.js
    node test_license_integrity.js
+   node test_client_server.js
    ```
 
 4. Запустити мобільний застосунок через Expo:
